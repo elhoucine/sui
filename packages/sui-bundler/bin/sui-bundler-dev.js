@@ -1,101 +1,40 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
-// https://github.com/coryhouse/react-slingshot/blob/master/tools/srcServer.js
-const historyApiFallback = require('connect-history-api-fallback')
+
 const webpack = require('webpack')
-const webpackDevMiddleware = require('webpack-dev-middleware')
-const webpackHotMiddleware = require('webpack-hot-middleware')
-const ncp = require('copy-paste')
-const detect = require('detect-port')
 const ora = require('ora')
-const app = require('express')()
+const {BundleAnalyzerPlugin} = require('webpack-bundle-analyzer')
+const DuplicatePackageCheckerPlugin = require('duplicate-package-checker-webpack-plugin')
 
-const config = require('../webpack.config.dev')
-const bundler = webpack(config)
+const config = require('../webpack.config.prod')
 
-console.log('📦  Bundler Dev Server')
+console.log('🔎  Bundler Analyzer')
+
 // Don't show ugly deprecation warnings that mess with the logging
 process.noDeprecation = true
 
-function getPortAvailable ({ port }) {
-  const spinner = ora(`Checking if port ${port} is available...`).start()
-  return new Promise((resolve, reject) => {
-    /* eslint-disable prefer-promise-reject-errors */
-    detect(port, (err, suggestedPort) => {
-      if (err) {
-        return reject({ err })
-      }
+config.plugins.push(new BundleAnalyzerPlugin())
+config.plugins.push(new DuplicatePackageCheckerPlugin({
+  // Also show module that is requiring each duplicate package
+  verbose: true,
+  // Emit errors instead of warnings
+  emitError: false
+}))
 
-      if (port === suggestedPort) {
-        spinner.succeed(`Port ${port} is free for using it`)
-        return resolve({ port })
-      }
+const spinner = ora(`Building and analyzing...`).start()
+webpack(config).run((error, stats) => {
+  if (error) {
+    spinner.fail('Error analyzing the build')
+    throw new Error(error)
+  }
 
-      spinner.warn(`Port ${port} is busy, using available port: ${suggestedPort}`)
-      return resolve({ port: suggestedPort })
-    })
-  })
-}
+  spinner.succeed('Bundle analyzed successfully')
+  const jsonStats = stats.toJson()
+  if (stats.hasErrors()) {
+    return jsonStats.errors.map(error => console.error(error))
+  }
 
-function listenBundlerEvents ({ bundler, spinner }) {
-  bundler.plugin('compile', _ => {
-    spinner.start(`Building bundle with Webpack`)
-  })
-
-  bundler.plugin('done', stats => {
-    const info = stats.toJson()
-    const { time } = info
-
-    if (stats.hasErrors()) {
-      spinner.fail('Build failed')
-      info.errors.forEach(console.error)
-    } else if (stats.hasWarnings()) {
-      spinner.info(`Build succeeded with warnings in ${time}ms`)
-      info.warnings.forEach(console.warn)
-    } else {
-      spinner.succeed(`Build succeed in ${time}ms`)
-    }
-
-    spinner.info('Waiting for new changes...')
-  })
-}
-
-function initializeDevServer ({ port }) {
-  const spinner = ora(`Initialize Dev Server on port ${port}`).start()
-  const webpackDevMiddlewareInstance = webpackDevMiddleware(bundler, {
-    hot: true,
-    noInfo: true,
-    overlay: true,
-    publicPath: config.output.publicPath,
-    quiet: true,
-    stats: false
-  })
-
-  const webpackHotMiddlewareInstance = webpackHotMiddleware(bundler, {
-    log: false,
-    noInfo: true,
-    overlay: true,
-    quiet: true
-  })
-
-  app.use(
-    historyApiFallback(),
-    webpackDevMiddlewareInstance,
-    webpackHotMiddlewareInstance
-  )
-
-  app.listen(port, () => {
-    ncp.copy(`http://localhost:${port}`)
-    spinner
-      .succeed(`Server started successfully`)
-      .info(`Copied url to clipboard: http://localhost:${port}`)
-      .start(`Building bundle with Webpack`)
-  })
-
-  listenBundlerEvents({ bundler, spinner })
-}
-
-const port = process.env.PORT || 3000
-getPortAvailable({ port })
-  .then(initializeDevServer)
-  .catch(err => console.error(err))
+  if (stats.hasWarnings()) {
+    jsonStats.warnings.map(warning => console.warn(warning))
+  }
+})

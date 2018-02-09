@@ -1,6 +1,6 @@
 import PropTypes from 'prop-types'
 import React, { Component, Fragment } from 'react'
-import tryRequire from './try-require'
+import tryRequire from '../try-require'
 
 class ReactDocGen extends Component {
   static propTypes = {
@@ -15,9 +15,9 @@ class ReactDocGen extends Component {
   componentDidMount () {
     require.ensure([], require => {
       const reactDocs = require('react-docgen')
-      tryRequire(this.props.params).then(([src, _]) =>
+      tryRequire(this.props.params).then(src => {
         this.setState({ docs: reactDocs.parse(src) })
-      )
+      })
     }, 'ReactDocgen')
   }
 

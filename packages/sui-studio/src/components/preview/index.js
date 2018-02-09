@@ -1,8 +1,6 @@
 /* eslint no-console: 0 */
 import PropTypes from 'prop-types'
-
 import React, { Component } from 'react'
-import ReactDOM from 'react-dom'
 
 const ERROR_TIMEOUT = 500
 
@@ -40,46 +38,37 @@ export default class Preview extends Component {
 
   compileCode () {
     const code = `
-      (function (${Object.keys(this.props.scope).join(', ')}, mountNode) {
+      (function (${Object.keys(this.props.scope).join(', ')}) {
         ${this.props.code}
       });`
 
     return window.Babel.transform(code, {
+      comments: false,
+      highlightCode: false,
       presets: ['es2015', 'stage-3', 'react']
     }).code
   }
 
-  buildScope (mountNode) {
+  buildScope () {
     return Object.keys(this.props.scope)
       .map(key => this.props.scope[key])
-      .concat(mountNode)
   }
 
   executeCode () {
     if (this.props.code === undefined) {
       return
     }
-    const mountNode = this.refs.mount
-    const scope = this.buildScope(mountNode)
+
+    const scope = this.buildScope()
 
     try {
-      ReactDOM.unmountComponentAtNode(mountNode)
-    } catch (e) {
-      console.error(e)
-    }
-
-    try {
-      const compiledCode = this.compileCode()
-      /* eslint-disable no-eval */
-      const Component = eval(compiledCode)(...scope)
-      ReactDOM.render(Component, mountNode)
-      if (this.state.error) {
-        this.setState({ error: undefined })
-      }
+      // evaluate the compiled code and execute it passing the needed Scope of the component
+      const Component = eval(this.compileCode())(...scope)  // eslint-disable-line no-eval
+      this.setState({ error: undefined, Component })
     } catch (err) {
       console.error(err)
       this.setTimeout(() => {
-        this.setState({ error: err.toString() })
+        this.setState({ Component: undefined, error: err.toString() })
       }, ERROR_TIMEOUT)
     }
   }
@@ -94,15 +83,14 @@ export default class Preview extends Component {
   }
 
   render () {
-    const { error } = this.state
+    const { Component, error } = this.state
 
     return (
       <div className='sui-StudioPreview'>
         {error !== undefined && this._renderError({ error })}
-        <div
-          ref='mount'
-          className='sui-StudioPreview-content sui-StudioDemo-preview'
-        />
+        <div className='sui-StudioPreview-content sui-StudioDemo-preview'>
+          {Component !== undefined && Component}
+        </div>
       </div>
     )
   }

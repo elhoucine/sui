@@ -12,7 +12,7 @@ import {
 import Preview from '../preview'
 import Style from '../style'
 
-import tryRequire from './try-require'
+import { tryRequireCode } from '../try-require'
 import stylesFor, { themesFor } from './fetch-styles'
 import CodeEditor from './CodeEditor'
 import ContextButtons from './ContextButtons'
@@ -31,14 +31,27 @@ const REACT_DOMAIN_CONNECTOR = '@s-ui/react-domain-connector'
 const CONTAINER_CLASS = 'sui-Studio'
 const FULLSCREEN_CLASS = 'sui-Studio--fullscreen'
 
-const createContextByType = (ctxt, type) => {
+const createSelectedContext = ({ contextTypesUsedByComponent, ctxtSelected, listOfContexts }) => {
   // check if the user has created a context.js with the needed contextTypes
-  if (typeof ctxt !== 'object' || ctxt === null) {
+  if (typeof listOfContexts !== 'object' || listOfContexts === null) {
     console.warn(
       "[Studio] You're trying to use a contextType in your component but it seems that you haven't created a context.js in the playground folder. This will likely make your component won't work as expected or it might have an useless context."
     )
   }
-  return deepmerge(ctxt[DEFAULT_CONTEXT], ctxt[type])
+
+  const selectedContext = deepmerge(listOfContexts[DEFAULT_CONTEXT], listOfContexts[ctxtSelected])
+  const listOfNeededContextTypes = Object.keys(contextTypesUsedByComponent)
+  // filter only the contextTypes used by the user
+  return Object.keys(selectedContext).reduce((filteredSelectedContext, contextType) => {
+    if (listOfNeededContextTypes.includes(contextType)) {
+      filteredSelectedContext[contextType] = selectedContext[contextType]
+    } else {
+      console.warn(
+        `[Studio] ${contextType} is in your context.js but it's not used by your component.`
+      )
+    }
+    return filteredSelectedContext
+  }, {})
 }
 
 const isFunction = fnc => !!(fnc && fnc.constructor && fnc.call && fnc.apply)
@@ -59,33 +72,21 @@ const removeDefaultContext = exports =>
 
 export default class Demo extends Component {
   static bootstrapWith (demo, { category, component, style, themes }) {
-    tryRequire({ category, component }).then(
-      ([exports, playground, ctxt, routes, events, pkg]) => {
-        if (isFunction(ctxt)) {
-          return ctxt().then(context => {
-            demo.setState({
-              playground,
-              exports,
-              ctxt: context,
-              routes,
-              style,
-              themes,
-              events,
-              pkg
-            })
-          })
-        }
-
-        demo.setState({
+    tryRequireCode({ category, component }).then(
+      ([component, playground, context, routes, events, pkg]) => {
+        const newState = {
+          component,
+          events,
+          pkg,
           playground,
-          exports,
-          ctxt,
           routes,
           style,
-          themes,
-          events,
-          pkg
-        })
+          themes
+        }
+
+        isFunction(context)
+          ? context().then(listOfContexts => { demo.setState({ ...newState, listOfContexts }) })
+          : demo.setState({ ...newState, listOfContexts: context })
       }
     )
   }
@@ -100,18 +101,18 @@ export default class Demo extends Component {
   }
 
   state = {
-    exports: false,
+    component: false,
+    listOfContexts: false,
+    ctxtSelectedIndex: 0,
+    ctxtSelected: 'default',
     isCodeOpen: false,
     isFullScreen: false,
-    ctxt: false,
-    ctxtSelectedIndex: 0,
-    ctxtType: 'default',
+    pkg: false,
     playground: undefined,
     routes: false,
     theme: 'default',
-    pkg: false,
-    themeSelectedIndex: 0,
-    themes: []
+    themes: [],
+    themeSelectedIndex: 0
   }
 
   _loadStyles ({ category, component }) {
@@ -133,44 +134,49 @@ export default class Demo extends Component {
     this.containerClassList && this.containerClassList.remove(FULLSCREEN_CLASS)
   }
 
+  hasProvider ({ pkg }) {
+    return pkg &&
+      pkg.dependencies &&
+      (pkg.dependencies[DDD_REACT_REDUX] ||
+        pkg.dependencies[REACT_DOMAIN_CONNECTOR])
+  }
+
   render () {
-    let {
-      exports,
-      ctxt,
+    const {
+      component,
+      listOfContexts,
       ctxtSelectedIndex,
-      ctxtType,
+      ctxtSelected,
       events,
       isCodeOpen,
       isFullScreen,
       pkg,
       playground,
       style,
-      themeSelectedIndex,
-      themes
+      themes,
+      themeSelectedIndex
     } = this.state
 
-    const Base = exports.default
+    const Base = component.default
     if (!Base) {
       return <h1>Loading...</h1>
     }
 
-    const nonDefaultExports = removeDefaultContext(exports)
-    const contextTypes = Base.contextTypes || Base.originalContextTypes
-    const context = contextTypes && createContextByType(ctxt, ctxtType)
+    const nonDefaultExports = removeDefaultContext(component)
+
+    const contextTypesUsedByComponent = Base.contextTypes
+    const context = createSelectedContext({ contextTypesUsedByComponent, ctxtSelected, listOfContexts })
+
     const { domain } = context || {}
-    const hasProvider =
-      pkg &&
-      pkg.dependencies &&
-      (pkg.dependencies[DDD_REACT_REDUX] ||
-        pkg.dependencies[REACT_DOMAIN_CONNECTOR])
+    const hasProvider = this.hasProvider({ pkg })
     const store = domain && hasProvider && createStore(domain)
 
-    const Enhance = pipe(
-      withContext(contextTypes && context, context),
+    const EnhancedComponent = pipe(
+      withContext(!!contextTypesUsedByComponent, context),
       withProvider(hasProvider, store)
     )(Base)
 
-    !Enhance.displayName &&
+    !EnhancedComponent.displayName &&
       console.error(new Error('Component.displayName must be defined.'))
 
     return (
@@ -178,7 +184,7 @@ export default class Demo extends Component {
         <Style>{style}</Style>
         <div className='sui-StudioNavBar-secondary'>
           <ContextButtons
-            ctxt={ctxt || {}}
+            ctxt={listOfContexts || {}}
             selected={ctxtSelectedIndex}
             onContextChange={this.handleContextChange}
           />
@@ -215,7 +221,7 @@ export default class Demo extends Component {
           code={playground}
           scope={{
             React,
-            [`${cleanDisplayName(Enhance.displayName)}`]: Enhance,
+            [`${cleanDisplayName(EnhancedComponent.displayName)}`]: EnhancedComponent,
             domain,
             ...nonDefaultExports
           }}
@@ -239,9 +245,9 @@ export default class Demo extends Component {
     })
   }
 
-  handleContextChange = (ctxtType, index) => {
+  handleContextChange = (ctxtSelected, index) => {
     this.setState({
-      ctxtType,
+      ctxtSelected,
       ctxtSelectedIndex: index,
       playground: this.state.playground + EVIL_HACK_TO_RERENDER_AFTER_CHANGE
     })
@@ -250,11 +256,7 @@ export default class Demo extends Component {
   handleThemeChange = (theme, index) => {
     const { category, component } = this.props.params
     stylesFor({ category, component, withTheme: theme }).then(style => {
-      this.setState({
-        style,
-        theme,
-        themeSelectedIndex: index
-      })
+      this.setState({ style, theme, themeSelectedIndex: index })
     })
   }
 

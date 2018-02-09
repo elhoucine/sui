@@ -45,7 +45,6 @@
     "normalize.css": "4.1.1",
     "now-client": "1.1.1",
     "pascal-case": "2.0.0",
-    "pmx": "0.6.2",
     "react-codemirror": "1.0.0",
     "react-docgen": "2.20.0",
     "react-test-renderer": "15.3.2",
@@ -54,7 +53,8 @@
   "suistudio-webpack": {
     "vendor": [
       "react",
-      "react-dom"
+      "react-dom",
+      "@schibstedspain/real-estate"
     ]
   },
   "repository": {

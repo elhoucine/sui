@@ -1,16 +1,17 @@
 import React from 'react'
-import {IndexRedirect, Route, Redirect} from 'react-router'
+import {browserHistory, IndexRedirect, Route, Router, Redirect} from 'react-router'
 
 import Layout from './components/layout'
 import Workbench from './components/workbench'
 import Demo from './components/demo'
-import Tests from './components/tests'
 import Documentation from './components/documentation'
 import ReactDocGen from './components/documentation/ReactDocGen'
 import MarkdownFile from './components/documentation/MarkdownFile'
 
+import './index.scss'
+
 export default (
-  <Route>
+  <Router history={browserHistory}>
     <Route path='/' component={Layout}>
       <Route path='workbench/:category/:component' component={Workbench}>
         <IndexRedirect to='demo' />
@@ -20,9 +21,8 @@ export default (
           <Route path='readme' component={(props) => <MarkdownFile {...props} file='README' />} />
           <Route path='changelog' component={(props) => <MarkdownFile {...props} file='CHANGELOG' />} />
         </Route>
-        <Route path='tests' component={Tests} />
       </Route>
     </Route>
     <Redirect from='**' to='/' />
-  </Route>
+  </Router>
 )
